@@ -7,6 +7,7 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IMetaMorpho, MarketAllocation} from "lib/metamorpho/src/interfaces/IMetaMorpho.sol";
 import {Currency} from "v4-core/src/types/Currency.sol";
+import {ERC1155} from "openzeppelin-contracts/contracts/token/ERC1155/ERC1155.sol";
 
 interface IWETH {
     function deposit() external payable;
@@ -16,7 +17,7 @@ interface IWETH {
     function balanceOf(address) external view returns (uint256);
 }
 
-contract ReapLiquidityRouter is Ownable {
+contract ReapLiquidityRouter is Ownable, ERC1155 {
     IPoolManager public immutable manager;
     address WETH;
     // Mapping from asset address to vault address
@@ -24,6 +25,7 @@ contract ReapLiquidityRouter is Ownable {
 
     event WithdrawalFromMorphoVault(uint256 amount);
     event MorphoDeposit(uint256 amount, uint256 minted);
+    event ReapLPTokenMinted(PoolKey poolKey, Currency currency, uint256 amount);
 
     constructor(IPoolManager _manager, address _WETH) Ownable(msg.sender) {
         manager = _manager;
@@ -61,6 +63,7 @@ contract ReapLiquidityRouter is Ownable {
         processAssetDeposit(asset1, asset1Amount, vaultAddressAset1);
     }
 
+    // TODO: also add the functionality to process withdrawals
     function processAssetDeposit(address assetAddress, uint256 amount, address vaultAddress) internal {
         // Check if the address is ETH
         if (assetAddress == address(0)) {
@@ -83,6 +86,25 @@ contract ReapLiquidityRouter is Ownable {
         IERC20(assetAddress).approve(vaultAddress, amount);
         // Call depositIntoMorphoVault
         depositIntoMorphoVault(assetAddress, amount, vaultAddress);
+
+        // Mint reapLPToken
+        mintReapLPToken(poolKey, currency, amount);
+        emit ReapLPTokenMinted(poolKey, currency, amount);
+    }
+
+    function mintReapLPToken(PoolKey memory poolKey, Curreny memory currency, uint256 amount) external {
+        uint256 erc1155ID = keccak256(abi.encode(poolKey, currency));
+        _mint(msg.sender, erc1155ID, amount, "");
+    }
+
+    function burnReapLPToken(PoolKey memory poolKey, Curreny memory currency, uint256 amount) external {
+        uint256 erc1155ID = keccak256(abi.encode(poolKey, currency));
+        // Check if the user has enough balance
+        uint256 balance = balanceOf(msg.sender, erc1155ID);
+        if (balance < amount) {
+            revert("ReapLiquidityRouter: Not enough balance");
+        }
+        _burn(msg.sender, erc1155ID, amount);
     }
 
     // Deposit liquidity into Morpho Vault
@@ -91,6 +113,7 @@ contract ReapLiquidityRouter is Ownable {
         returns (uint256)
     {
         uint256 sharedMinted = IMetaMorpho(vaultAddress).deposit(amount, address(this));
+
         emit MorphoDeposit(amount, sharedMinted);
         return sharedMinted;
     }
