@@ -10,3 +10,7 @@ via_ir = false
 
 [lint]
 exclude_lints = ["screaming-snake-case-immutable", "screaming-snake-case-const"]
+
+
+[rpc_endpoints]
+mainnet = "${MAINNET_RPC_URL}"
