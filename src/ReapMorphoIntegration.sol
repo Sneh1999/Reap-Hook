@@ -34,9 +34,6 @@ contract ReapMorphoIntegration is ERC1155 {
     ) internal {
         // Check if the address is ETH
         if (assetAddress == address(0)) {
-            // Check that msg.value is not 0
-            require(msg.value == amount, "msg.value != amount");
-            // Now convert ETH to WETH equal to msg.value
             IWrapped(WETH).deposit{value: amount}();
             // Approve WETH to Morpho Vault
             IERC20(WETH).approve(vaultAddress, amount);
@@ -50,14 +47,11 @@ contract ReapMorphoIntegration is ERC1155 {
 
         // Call depositIntoMorphoVault
         depositIntoMorphoVault(amount, vaultAddress);
-
-        // Mint reapLPToken
-        mintReapLPToken(poolKey, assetAddress, amount);
-        emit ReapLPTokenMinted(poolKey, assetAddress, amount);
     }
 
     function depositIntoMorphoVault(uint256 amount, address vaultAddress) internal {
         uint256 sharedMinted = IMetaMorpho(vaultAddress).deposit(amount, address(this));
+        // TODO: maybe shares minted should equal to the ERC1155 tokens that are minted to the user
         emit MorphoDeposit(amount, sharedMinted);
     }
 
@@ -69,7 +63,7 @@ contract ReapMorphoIntegration is ERC1155 {
     function withdrawAll(address vaultAddress) internal returns (uint256) {
         uint256 shares = IMetaMorpho(vaultAddress).balanceOf(address(this));
         if (shares > 0) {
-            IMetaMorpho(vaultAddress).withdraw(shares, address(this), address(this));
+            IMetaMorpho(vaultAddress).redeem(shares, address(this), address(this));
         }
         return shares;
     }
