@@ -15,6 +15,8 @@ import {IV4Router} from "v4-periphery/src/interfaces/IV4Router.sol";
 import {IUniversalRouter} from "src/interfaces/IUniversalRouter.sol";
 import {IPermit2} from "lib/permit2/src/interfaces/IPermit2.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import "forge-std/console.sol";
 
 contract ReapLiquidityRouterTest is Test {
     ReapLiquidityRouter router;
@@ -32,7 +34,7 @@ contract ReapLiquidityRouterTest is Test {
     address permit2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
 
     address thisContract = address(this);
-    uint256 asset1Amount = 1000e6;
+    uint256 asset1Amount = 1e9;
     uint256 asset0Amount = 1 ether;
 
     ReapMorphoIntegration public reapMorphoIntegration;
@@ -73,7 +75,6 @@ contract ReapLiquidityRouterTest is Test {
 
         vm.prank(usdcWhale);
         IERC20(usdc).transfer(thisContract, asset1Amount);
-        vm.stopPrank();
 
         assertEq(IERC20(usdc).balanceOf(thisContract), asset1Amount);
 
@@ -83,91 +84,164 @@ contract ReapLiquidityRouterTest is Test {
         router.addLiquidity{value: asset0Amount}(key, asset0Amount, asset1Amount);
     }
 
-    // function testModifyLiquidityNativeEthAndErc20() public {
-    //     // Check that the given contract has correct number of ERC1155 tokens
-    //     uint256 erc1155USDCID = uint256(keccak256(abi.encode(key, usdc)));
-    //     assertEq(IERC1155(router).balanceOf(thisContract, erc1155USDCID), asset1Amount);
+    function testModifyLiquidityNativeEthAndErc20() public {
+        // Check that the given contract has correct number of ERC1155 tokens
+        uint256 erc1155ID = uint256(PoolId.unwrap(key.toId()));
 
-    //     // Get for eth
-    //     uint256 erc1155WETHID = uint256(keccak256(abi.encode(key, address(0))));
-    //     assertEq(IERC1155(router).balanceOf(thisContract, erc1155WETHID), asset0Amount);
-    // }
-
-    // function testSwapNativeEthAndErc20() public {
-    //     uint128 amountIn = 0.001 ether;
-    //     uint128 minOut = 0;
-
-    //     bytes memory actions = abi.encodePacked(
-    //         bytes1(uint8(Actions.SWAP_EXACT_IN_SINGLE)),
-    //         bytes1(uint8(Actions.SETTLE_ALL)),
-    //         bytes1(uint8(Actions.TAKE_ALL))
-    //     );
-
-    //     bool zeroForOne = true;
-    //     bytes memory hookData = "";
-
-    //     bytes[] memory v4Params = new bytes[](3);
-
-    //     v4Params[0] = abi.encode(
-    //         IV4Router.ExactInputSingleParams({
-    //             poolKey: key,
-    //             zeroForOne: zeroForOne,
-    //             amountIn: amountIn,
-    //             amountOutMinimum: minOut,
-    //             hookData: hookData
-    //         })
-    //     );
-
-    //     v4Params[1] = abi.encode(key.currency0, amountIn);
-
-    //     // Third parameter: specify output tokens from the swap
-    //     v4Params[2] = abi.encode(key.currency1, minOut);
-
-    //     // The UniversalRouter `execute` envelope for V4:
-    //     // commands = single byte 0x10 (V4_SWAP)
-    //     // inputs[0] = abi.encode(actions, v4Params)
-    //     bytes memory commands = hex"10";
-
-    //     bytes[] memory inputs = new bytes[](1);
-
-    //     inputs[0] = abi.encode(actions, v4Params);
-
-    //     uint256 deadline = block.timestamp + 300;
-    //     uint256 usdcBefore = IERC20(usdc).balanceOf(address(this));
-
-    //     IUniversalRouter(universalRouter).execute{value: asset0Amount}(commands, inputs, deadline);
-
-    //     uint256 usdcAfter = IERC20(usdc).balanceOf(address(this));
-    //     assertTrue(usdcAfter > usdcBefore, "no USDC received");
-    // }
-
-    function testWithdrawLiquidityFromRouter() public {
-        uint256 balanceOfReapLpTokenETH = router.balanceOfReapLPToken(key, address(0));
-        assertTrue(balanceOfReapLpTokenETH > 0);
-
-        uint256 balanceOfReapLpTokenUSDC = router.balanceOfReapLPToken(key, usdc);
-        assertTrue(balanceOfReapLpTokenUSDC > 0);
-
-        // Withdraw liquidity from the router
-        router.removeLiquidity(key, balanceOfReapLpTokenETH, balanceOfReapLpTokenUSDC);
-
-        // Check that the balance of Reap LP Token is 0
-        balanceOfReapLpTokenETH = router.balanceOfReapLPToken(key, address(0));
-        assertEq(balanceOfReapLpTokenETH, 0);
-
-        balanceOfReapLpTokenUSDC = router.balanceOfReapLPToken(key, usdc);
-        assertEq(balanceOfReapLpTokenUSDC, 0);
+        uint256 liquidity = Math.sqrt(asset0Amount * asset1Amount);
+        assertEq(IERC1155(router).balanceOf(thisContract, erc1155ID), liquidity);
     }
 
-    // function testDepositTwoERC20() public {
-    //     // TODO: need to implement this
-    // }
+    function testSwapNativeEthAndErc20() public {
+        uint128 amountIn = 0.001 ether;
+        uint128 minOut = 0;
 
-    // function testSwapTwoERC20() public {
-    //     // TODO: need to implement this
-    // }
+        bytes memory actions = abi.encodePacked(
+            bytes1(uint8(Actions.SWAP_EXACT_IN_SINGLE)),
+            bytes1(uint8(Actions.SETTLE_ALL)),
+            bytes1(uint8(Actions.TAKE_ALL))
+        );
+
+        bool zeroForOne = true;
+        bytes memory hookData = "";
+
+        bytes[] memory v4Params = new bytes[](3);
+
+        v4Params[0] = abi.encode(
+            IV4Router.ExactInputSingleParams({
+                poolKey: key,
+                zeroForOne: zeroForOne,
+                amountIn: amountIn,
+                amountOutMinimum: minOut,
+                hookData: hookData
+            })
+        );
+
+        v4Params[1] = abi.encode(key.currency0, amountIn);
+
+        // Third parameter: specify output tokens from the swap
+        v4Params[2] = abi.encode(key.currency1, minOut);
+
+        // The UniversalRouter `execute` envelope for V4:
+        // commands = single byte 0x10 (V4_SWAP)
+        // inputs[0] = abi.encode(actions, v4Params)
+        bytes memory commands = hex"10";
+
+        bytes[] memory inputs = new bytes[](1);
+
+        inputs[0] = abi.encode(actions, v4Params);
+
+        uint256 deadline = block.timestamp + 300;
+        uint256 usdcBefore = IERC20(usdc).balanceOf(address(this));
+
+        IUniversalRouter(universalRouter).execute{value: asset0Amount}(commands, inputs, deadline);
+
+        uint256 usdcAfter = IERC20(usdc).balanceOf(address(this));
+        assertTrue(usdcAfter > usdcBefore, "no USDC received");
+    }
+
+    function testWithdrawLiquidityFromRouter() public {
+        uint256 id = uint256(PoolId.unwrap(key.toId()));
+        uint256 balanceOfReapLpTokenETH = router.balanceOf(address(this), id);
+
+        // Withdraw liquidity from the router
+        router.removeLiquidity(key, balanceOfReapLpTokenETH);
+
+        // Check that the balance of Reap LP Token is 0
+        balanceOfReapLpTokenETH = router.balanceOf(address(this), id);
+        assertEq(balanceOfReapLpTokenETH, 0);
+
+        // Check the ETH and USDC balance of the contract
+        uint256 ethBalance = address(this).balance;
+        assertTrue(ethBalance >= asset0Amount, "ETH balance is not enough");
+        uint256 usdcBalance = IERC20(usdc).balanceOf(address(this));
+        assertApproxEqAbs(usdcBalance, asset1Amount, 1e6, "USDC balance is not enough");
+    }
+
+    function testE2EWithTwoUsers() public {
+        address user1 = address(1);
+        vm.deal(user1, 100 ether);
+        uint256 asset0AmountUser = 10 ether;
+        uint256 asset1AmountUser = 1e10;
+
+        vm.prank(usdcWhale);
+        IERC20(usdc).transfer(user1, asset1AmountUser);
+
+        vm.startPrank(user1);
+        IERC20(usdc).approve(address(router), asset1AmountUser);
+
+        router.addLiquidity{value: asset0AmountUser}(key, asset0AmountUser, asset1AmountUser);
+        vm.stopPrank();
+
+        uint256 id = uint256(PoolId.unwrap(key.toId()));
+        // 316 approx tokens
+        uint256 balanceOfReapLpTokenUser1 = router.balanceOf(user1, id);
+        console.log("balanceOfReapLpTokenUser1", balanceOfReapLpTokenUser1);
+        assertApproxEqAbs(balanceOfReapLpTokenUser1, 316e12, 1e12, "Reap LP Token balance is not correct");
+
+        // Now withdraw liquidity from the router for address(this)
+        uint256 balanceOfReapLpToken = router.balanceOf(address(this), id);
+        uint256 etherBalanceBeforeWithdraw = address(this).balance;
+        uint256 usdcBalanceBeforeWithdraw = IERC20(usdc).balanceOf(address(this));
+        router.removeLiquidity(key, balanceOfReapLpToken);
+
+        vm.startPrank(user1);
+        uint256 etherBalanceBeforeWithdrawUser1 = user1.balance;
+        uint256 usdcBalanceBeforeWithdrawUser1 = IERC20(usdc).balanceOf(user1);
+        balanceOfReapLpTokenUser1 = router.balanceOf(user1, id);
+        router.removeLiquidity(key, balanceOfReapLpTokenUser1);
+        vm.stopPrank();
+
+        // Get after balances for both users for ETH and USDC
+        uint256 etherBalanceAfterWithdraw = address(this).balance;
+        uint256 usdcBalanceAfterWithdraw = IERC20(usdc).balanceOf(address(this));
+        console.log("etherBalanceAfterWithdraw for Test contract", etherBalanceAfterWithdraw);
+        console.log("usdcBalanceAfterWithdraw for Test contract", usdcBalanceAfterWithdraw);
+
+        // User1
+        uint256 etherBalanceAfterWithdrawUser1 = user1.balance;
+        uint256 usdcBalanceAfterWithdrawUser1 = IERC20(usdc).balanceOf(user1);
+        console.log("etherBalanceAfterWithdraw for User 1", etherBalanceAfterWithdrawUser1);
+        console.log("usdcBalanceAfterWithdraw for User 1", usdcBalanceAfterWithdrawUser1);
+
+        assertApproxEqAbs(
+            etherBalanceAfterWithdraw - etherBalanceBeforeWithdraw,
+            asset0Amount,
+            1e12,
+            "ETH balance is not correct for Test contract"
+        );
+        assertApproxEqAbs(
+            usdcBalanceAfterWithdraw - usdcBalanceBeforeWithdraw,
+            asset1Amount,
+            1e6,
+            "USDC balance is not correct for Test contract"
+        );
+
+        assertApproxEqAbs(
+            usdcBalanceAfterWithdrawUser1 - usdcBalanceBeforeWithdrawUser1,
+            asset1AmountUser,
+            1e6,
+            "USDC balance is not correct for User 1"
+        );
+        assertApproxEqAbs(
+            etherBalanceAfterWithdrawUser1 - etherBalanceBeforeWithdrawUser1,
+            asset0AmountUser,
+            1e12,
+            "ETH balance is not correct for User 1"
+        );
+    }
+
+    //     // function testDepositTwoERC20() public {
+    //     //     // TODO: need to implement this
+    //     // }
+
+    //     // function testSwapTwoERC20() public {
+    //     //     // TODO: need to implement this
+    //     // }
 
     function onERC1155Received(address, address, uint256, uint256, bytes calldata) external pure returns (bytes4) {
         return IERC1155Receiver.onERC1155Received.selector;
     }
+
+    receive() external payable {}
 }
