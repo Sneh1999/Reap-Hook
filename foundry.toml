@@ -2,15 +2,15 @@
 evm_version = "cancun"
 ffi = true
 fs_permissions = [{access = "read-write", path = ".forge-snapshots/"}]
+
 libs = ["lib"]
 out = "out"
-solc_version = "0.8.26"
+solc_version = "0.8.29"
 src = "src"
 via_ir = true
 
-[lint]
+[profile.lint]
 exclude_lints = ["screaming-snake-case-immutable", "screaming-snake-case-const"]
-
 
 [rpc_endpoints]
 mainnet = "${MAINNET_RPC_URL}"
