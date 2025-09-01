@@ -14,6 +14,7 @@ import {IERC1155} from "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
 import {IV4Router} from "v4-periphery/src/interfaces/IV4Router.sol";
 import {IUniversalRouter} from "src/interfaces/IUniversalRouter.sol";
 import {IPermit2} from "lib/permit2/src/interfaces/IPermit2.sol";
+import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 
 contract ReapLiquidityRouterTest is Test {
     ReapLiquidityRouter router;
@@ -29,6 +30,10 @@ contract ReapLiquidityRouterTest is Test {
     address poolManager = 0x000000000004444c5dc75cB358380D2e3dE08A90;
     address positionManager = 0xbD216513d74C8cf14cf4747E6AaA6420FF64ee9e;
     address permit2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
+
+    address thisContract = address(this);
+    uint256 asset1Amount = 1000e6;
+    uint256 asset0Amount = 1 ether;
 
     ReapMorphoIntegration public reapMorphoIntegration;
     PoolKey key;
@@ -62,26 +67,23 @@ contract ReapLiquidityRouterTest is Test {
         // Now set the morphoVault address
         router.setMorphoAssetToVault(assetAddressWeth, vaultAddressWeth);
         router.setMorphoAssetToVault(usdc, vaultUSDC);
+
+        // Add liquidity to the pool
+        vm.deal(address(this), 100 ether);
+
+        vm.prank(usdcWhale);
+        IERC20(usdc).transfer(thisContract, asset1Amount);
+        vm.stopPrank();
+
+        assertEq(IERC20(usdc).balanceOf(thisContract), asset1Amount);
+
+        // Give approval of usdc to the router
+        IERC20(usdc).approve(address(router), asset1Amount);
+
+        router.addLiquidity{value: asset0Amount}(key, asset0Amount, asset1Amount);
     }
 
-    // function testModifyLiquidity() public {
-    //     vm.deal(address(this), 100 ether);
-
-    //     uint256 asset1Amount = 1000e6; // 1000 USDC (6 decimals)
-
-    //     address thisContract = address(this);
-    //     vm.prank(usdcWhale);
-    //     IERC20(usdc).transfer(thisContract, asset1Amount);
-    //     vm.stopPrank();
-
-    //     assertEq(IERC20(usdc).balanceOf(thisContract), asset1Amount);
-
-    //     uint256 asset0Amount = 1 ether;
-    //     // Give approval of usdc to the router
-    //     IERC20(usdc).approve(address(router), asset1Amount);
-
-    //     router.modifyLiquidity{value: asset0Amount}(key, asset0Amount, asset1Amount);
-
+    // function testModifyLiquidityNativeEthAndErc20() public {
     //     // Check that the given contract has correct number of ERC1155 tokens
     //     uint256 erc1155USDCID = uint256(keccak256(abi.encode(key, usdc)));
     //     assertEq(IERC1155(router).balanceOf(thisContract, erc1155USDCID), asset1Amount);
@@ -91,75 +93,79 @@ contract ReapLiquidityRouterTest is Test {
     //     assertEq(IERC1155(router).balanceOf(thisContract, erc1155WETHID), asset0Amount);
     // }
 
-    function testSwap() public {
-        vm.deal(address(this), 100 ether);
-        uint256 asset1Amount = 1000e6; // 1000 USDC (6 decimals)
-        address thisContract = address(this);
-        vm.prank(usdcWhale);
-        IERC20(usdc).transfer(thisContract, asset1Amount);
-        vm.stopPrank();
+    // function testSwapNativeEthAndErc20() public {
+    //     uint128 amountIn = 0.001 ether;
+    //     uint128 minOut = 0;
 
-        assertEq(IERC20(usdc).balanceOf(thisContract), asset1Amount);
+    //     bytes memory actions = abi.encodePacked(
+    //         bytes1(uint8(Actions.SWAP_EXACT_IN_SINGLE)),
+    //         bytes1(uint8(Actions.SETTLE_ALL)),
+    //         bytes1(uint8(Actions.TAKE_ALL))
+    //     );
 
-        uint256 asset0Amount = 1 ether;
-        // Give approval of usdc to the router
-        IERC20(usdc).approve(address(router), asset1Amount);
+    //     bool zeroForOne = true;
+    //     bytes memory hookData = "";
 
-        router.modifyLiquidity{value: asset0Amount}(key, asset0Amount, asset1Amount);
+    //     bytes[] memory v4Params = new bytes[](3);
 
-        uint128 amountIn = 100 wei;
-        uint128 minOut = 0;
+    //     v4Params[0] = abi.encode(
+    //         IV4Router.ExactInputSingleParams({
+    //             poolKey: key,
+    //             zeroForOne: zeroForOne,
+    //             amountIn: amountIn,
+    //             amountOutMinimum: minOut,
+    //             hookData: hookData
+    //         })
+    //     );
 
-        bytes memory actions = abi.encodePacked(
-            bytes1(uint8(Actions.SWAP_EXACT_IN_SINGLE)),
-            bytes1(uint8(Actions.SETTLE_ALL)),
-            bytes1(uint8(Actions.TAKE_ALL))
-        );
+    //     v4Params[1] = abi.encode(key.currency0, amountIn);
 
-        bool zeroForOne = true;
-        bytes memory hookData = "";
+    //     // Third parameter: specify output tokens from the swap
+    //     v4Params[2] = abi.encode(key.currency1, minOut);
 
-        bytes memory p0 = abi.encode(
-            IV4Router.ExactInputSingleParams({
-                poolKey: key,
-                zeroForOne: zeroForOne,
-                amountIn: amountIn,
-                amountOutMinimum: minOut,
-                hookData: hookData
-            })
-        );
+    //     // The UniversalRouter `execute` envelope for V4:
+    //     // commands = single byte 0x10 (V4_SWAP)
+    //     // inputs[0] = abi.encode(actions, v4Params)
+    //     bytes memory commands = hex"10";
 
-        // 2) SETTLE_ALL params: (Currency currencyIn, bool payerIsUser)
-        // For native ETH, currency = Currency.wrap(address(0)), payerIsUser = true
-        bytes memory p1 = abi.encode(address(0), true);
+    //     bytes[] memory inputs = new bytes[](1);
 
-        // 3) TAKE_ALL params: (Currency currencyOut, address recipient, uint256 minAmount)
-        // Take all USDC to `me`. minAmount=0 for “no min” (set >0 in prod).
-        bytes memory p2 = abi.encode(Currency.wrap(usdc), address(this), uint256(0));
+    //     inputs[0] = abi.encode(actions, v4Params);
 
-        bytes[] memory v4Params = new bytes[](3);
-        v4Params[0] = p0;
-        v4Params[1] = p1;
-        v4Params[2] = p2;
+    //     uint256 deadline = block.timestamp + 300;
+    //     uint256 usdcBefore = IERC20(usdc).balanceOf(address(this));
 
-        // The UniversalRouter `execute` envelope for V4:
-        // commands = single byte 0x10 (V4_SWAP)
-        // inputs[0] = abi.encode(actions, v4Params)
-        bytes memory commands = hex"10";
+    //     IUniversalRouter(universalRouter).execute{value: asset0Amount}(commands, inputs, deadline);
 
-        bytes[] memory inputs = new bytes[](1);
+    //     uint256 usdcAfter = IERC20(usdc).balanceOf(address(this));
+    //     assertTrue(usdcAfter > usdcBefore, "no USDC received");
+    // }
 
-        inputs[0] = abi.encode(actions, v4Params);
+    function testWithdrawLiquidityFromRouter() public {
+        uint256 balanceOfReapLpTokenETH = router.balanceOfReapLPToken(key, address(0));
+        assertTrue(balanceOfReapLpTokenETH > 0);
 
-        // Execute; send ETH as msg.value to fund the swap
-        uint256 deadline = block.timestamp + 300;
-        uint256 usdcBefore = IERC20(usdc).balanceOf(address(this));
+        uint256 balanceOfReapLpTokenUSDC = router.balanceOfReapLPToken(key, usdc);
+        assertTrue(balanceOfReapLpTokenUSDC > 0);
 
-        IUniversalRouter(universalRouter).execute{value: asset0Amount}(commands, inputs, deadline);
+        // Withdraw liquidity from the router
+        router.removeLiquidity(key, balanceOfReapLpTokenETH, balanceOfReapLpTokenUSDC);
 
-        uint256 usdcAfter = IERC20(usdc).balanceOf(address(this));
-        assertTrue(usdcAfter > usdcBefore, "no USDC received");
+        // Check that the balance of Reap LP Token is 0
+        balanceOfReapLpTokenETH = router.balanceOfReapLPToken(key, address(0));
+        assertEq(balanceOfReapLpTokenETH, 0);
+
+        balanceOfReapLpTokenUSDC = router.balanceOfReapLPToken(key, usdc);
+        assertEq(balanceOfReapLpTokenUSDC, 0);
     }
+
+    // function testDepositTwoERC20() public {
+    //     // TODO: need to implement this
+    // }
+
+    // function testSwapTwoERC20() public {
+    //     // TODO: need to implement this
+    // }
 
     function onERC1155Received(address, address, uint256, uint256, bytes calldata) external pure returns (bytes4) {
         return IERC1155Receiver.onERC1155Received.selector;

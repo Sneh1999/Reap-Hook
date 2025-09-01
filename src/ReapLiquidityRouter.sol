@@ -97,11 +97,12 @@ contract ReapLiquidityRouter is Ownable, ReapMorphoIntegration, BaseHook {
             uint256 WETHBalance = IWrapped(WETH).balanceOf(address(this));
             IWrapped(WETH).withdraw(WETHBalance);
             asset0Amount = address(this).balance;
-            console.log("asset0 amount after withdraw", asset0Amount);
         } else {
             asset0Amount = IERC20(asset0).balanceOf(address(this));
         }
 
+        console.log("Adding amount0Amount to the pool", asset0Amount);
+        console.log("Adding amount1Amount to the pool", asset1Amount);
         _addLiquidityToPool(key, asset0Amount, asset1Amount, asset0, asset1);
         return (BaseHook.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
     }
@@ -162,8 +163,12 @@ contract ReapLiquidityRouter is Ownable, ReapMorphoIntegration, BaseHook {
         return BaseHook.afterInitialize.selector;
     }
 
-    function modifyLiquidity(PoolKey memory poolKey, uint256 asset0Amount, uint256 asset1Amount) external payable {
-        return _modifyLiquidity(poolKey, asset0Amount, asset1Amount);
+    function addLiquidity(PoolKey memory poolKey, uint256 asset0Amount, uint256 asset1Amount) external payable {
+        return _addLiquidity(poolKey, asset0Amount, asset1Amount);
+    }
+
+    function removeLiquidity(PoolKey memory poolKey, uint256 asset0Amount, uint256 asset1Amount) external payable {
+        return _removeLiquidity(poolKey, asset0Amount, asset1Amount);
     }
 
     // HELPER FUNCTIONS //
@@ -282,11 +287,14 @@ contract ReapLiquidityRouter is Ownable, ReapMorphoIntegration, BaseHook {
 
         asset1Amount = IERC20(asset1Address).balanceOf(address(this));
 
-        processMorphoAssetDeposit(asset0Address, asset0Amount, vaultAddressAsset0, key);
-        processMorphoAssetDeposit(asset1Address, asset1Amount, vaultAddressAsset1, key);
+        console.log("asset0Amount after removing liquidity", asset0Amount);
+        console.log("asset1Amount after removing liquidity", asset1Amount);
+
+        processMorphoAssetDeposit(asset0Address, asset0Amount, vaultAddressAsset0, address(this));
+        processMorphoAssetDeposit(asset1Address, asset1Amount, vaultAddressAsset1, address(this));
     }
 
-    function _modifyLiquidity(PoolKey memory poolKey, uint256 asset0Amount, uint256 asset1Amount) internal {
+    function _addLiquidity(PoolKey memory poolKey, uint256 asset0Amount, uint256 asset1Amount) internal {
         PoolId pookKeyId = poolKey.toId();
         if (!isReapPool[pookKeyId]) {
             revert("ReapLiquidityRouter: Not a reap pool");
@@ -316,14 +324,63 @@ contract ReapLiquidityRouter is Ownable, ReapMorphoIntegration, BaseHook {
             require(msg.value == asset0Amount, "User sent less ETH than required");
         }
 
-        processMorphoAssetDeposit(asset0, asset0Amount, vaultAddressAsset0, poolKey);
+        uint256 asset0AmountMinted = processMorphoAssetDeposit(asset0, asset0Amount, vaultAddressAsset0, msg.sender);
 
-        mintReapLPToken(poolKey, asset0, asset0Amount);
+        mintReapLPToken(poolKey, asset0, asset0AmountMinted);
         emit ReapLPTokenMinted(poolKey, asset0, asset0Amount);
 
-        processMorphoAssetDeposit(asset1, asset1Amount, vaultAddressAset1, poolKey);
+        uint256 asset1AmountMinted = processMorphoAssetDeposit(asset1, asset1Amount, vaultAddressAset1, msg.sender);
         mintReapLPToken(poolKey, asset1, asset1Amount);
         emit ReapLPTokenMinted(poolKey, asset1, asset1Amount);
+    }
+
+    function _removeLiquidity(PoolKey memory poolKey, uint256 asset0Amount, uint256 asset1Amount) internal {
+        PoolId pookKeyId = poolKey.toId();
+        if (!isReapPool[pookKeyId]) {
+            revert("ReapLiquidityRouter: Not a reap pool");
+        }
+        // Get asset 0 address
+        Currency assetCurrency0 = poolKey.currency0;
+        address asset0 = Currency.unwrap(assetCurrency0);
+        address vaultAddressAsset0;
+        if (asset0 == address(0)) {
+            vaultAddressAsset0 = morphoAssetToVault[WETH];
+        } else {
+            vaultAddressAsset0 = morphoAssetToVault[asset0];
+        }
+        address asset1 = Currency.unwrap(poolKey.currency1);
+
+        // Check if a vault address exists for the asset
+        address vaultAddressAset1 = morphoAssetToVault[asset1];
+        if (vaultAddressAset1 == address(0)) {
+            revert("ReapLiquidityRouter: No vault address found for asset");
+        }
+
+        // Get balance of Reap LP Token
+        uint256 balanceOfAsset0 = balanceOfReapLPToken(poolKey, asset0);
+
+        // Check if the balance is greater than or equal to the amount
+        if (balanceOfAsset0 < asset0Amount) {
+            revert("ReapLiquidityRouter: Not enough balance of Reap LP Token");
+        }
+
+        // Get balance of asset 1
+        uint256 balanceOfAsset1 = balanceOfReapLPToken(poolKey, asset1);
+        if (balanceOfAsset1 < asset1Amount) {
+            revert("ReapLiquidityRouter: Not enough balance of asset 1");
+        }
+
+        if (balanceOfAsset1 == asset1Amount) {
+            withdrawAll(vaultAddressAset1);
+        }
+
+        // if the balances are correct, then remove liquidity
+        withdrawFromMorphoVault(asset0Amount, vaultAddressAsset0);
+        withdrawFromMorphoVault(asset1Amount, vaultAddressAset1);
+
+        // Now burn the Reap LP Token
+        burnReapLPToken(poolKey, asset0, asset0Amount);
+        burnReapLPToken(poolKey, asset1, asset1Amount);
     }
 
     function setIsReapPool(PoolKey memory poolKey, bool isValid) external onlyOwner {

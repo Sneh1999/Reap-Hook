@@ -26,12 +26,10 @@ contract ReapMorphoIntegration is ERC1155 {
     }
 
     // TODO: also add the functionality to process withdrawals
-    function processMorphoAssetDeposit(
-        address assetAddress,
-        uint256 amount,
-        address vaultAddress,
-        PoolKey memory poolKey
-    ) internal {
+    function processMorphoAssetDeposit(address assetAddress, uint256 amount, address vaultAddress, address spender)
+        internal
+        returns (uint256)
+    {
         // Check if the address is ETH
         if (assetAddress == address(0)) {
             IWrapped(WETH).deposit{value: amount}();
@@ -40,19 +38,23 @@ contract ReapMorphoIntegration is ERC1155 {
         } else {
             // TODO: check what is the significance of bool in wrapped assets
             // Transfer assetAddress to msg.sender
-            IERC20(assetAddress).transferFrom(msg.sender, address(this), amount);
+            // TODO: change this code
+            if (spender != address(this)) {
+                IERC20(assetAddress).transferFrom(spender, address(this), amount);
+            }
             // Give vault the approval
             IERC20(assetAddress).approve(vaultAddress, amount);
         }
 
         // Call depositIntoMorphoVault
-        depositIntoMorphoVault(amount, vaultAddress);
+        return depositIntoMorphoVault(amount, vaultAddress);
     }
 
-    function depositIntoMorphoVault(uint256 amount, address vaultAddress) internal {
+    function depositIntoMorphoVault(uint256 amount, address vaultAddress) internal returns (uint256) {
         uint256 sharedMinted = IMetaMorpho(vaultAddress).deposit(amount, address(this));
         // TODO: maybe shares minted should equal to the ERC1155 tokens that are minted to the user
         emit MorphoDeposit(amount, sharedMinted);
+        return sharedMinted;
     }
 
     function withdrawFromMorphoVault(uint256 amount, address vaultAddress) internal {
@@ -71,6 +73,11 @@ contract ReapMorphoIntegration is ERC1155 {
     function mintReapLPToken(PoolKey memory poolKey, address asset, uint256 amount) internal {
         uint256 erc1155ID = uint256(keccak256(abi.encode(poolKey, asset)));
         _mint(msg.sender, erc1155ID, amount, "");
+    }
+
+    function balanceOfReapLPToken(PoolKey memory poolKey, address asset) public view returns (uint256) {
+        uint256 erc1155ID = uint256(keccak256(abi.encode(poolKey, asset)));
+        return balanceOf(msg.sender, erc1155ID);
     }
 
     function burnReapLPToken(PoolKey memory poolKey, address asset, uint256 amount) internal {
