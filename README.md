@@ -2,7 +2,9 @@
 
 ## Overview
 
-Reap is a hook and router which allows rehypothecation of Uniswap v4 liquidity pools. It is built on top of the [Morpho Vaults](https://docs.morpho.org/build/).
+Reap is a hook and router which allows rehypothecation of Uniswap v4 liquidity pools. It is built on top of the [Morpho Vaults](https://docs.morpho.org/build/)
+
+Credits: This repo was built using the [template](https://github.com/uniswapfoundation/v4-template).
 
 ## Design
 
